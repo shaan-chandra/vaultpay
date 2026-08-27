@@ -387,7 +387,7 @@ function AddMerchantModal({ onClose, onCreated }: AddMerchantModalProps) {
           email: form.email,
           contact: form.contact,
           password: form.password, 
-          commissionPercent: Math.round(parseFloat(form.commissionPercent)*100)
+          commissionPercent: parseFloat(form.commissionPercent)
         })
       }
       )

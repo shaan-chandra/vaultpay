@@ -22,14 +22,14 @@ import {
 type Payment = {
   id: string
   payer: string
-  amountPaise: number // stored in paise, like the backend
+  amount: number
   date: string // ISO
   status: "Received" | "Pending"
 }
 
 type MerchantData = {
   businessName: string
-  balancePaise: number
+  balance: number
   paymentsToday: number
   paymentsTodayDelta: number
   paymentsThisMonth: number
@@ -37,15 +37,69 @@ type MerchantData = {
   recentPayments: Payment[]
 }
 
-// TODO: fetch from GET /merchant/me and GET /merchant/payments
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"
+
 const EMPTY: MerchantData = {
   businessName: "",
-  balancePaise: 0,
+  balance: 0,
   paymentsToday: 0,
   paymentsTodayDelta: 0,
   paymentsThisMonth: 0,
   activeLinks: 0,
   recentPayments: [],
+}
+
+/* One row from GET /merchant/payments. Only the fields this page reads. */
+type ApiPayment = {
+  id: string
+  amountPaid: number
+  merchantCredit: number
+  status: "PENDING" | "SUCCEEDED" | "FAILED" | "BLOCKED"
+  payerEmail: string | null
+  createdAt: string
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return a.toDateString() === b.toDateString()
+}
+
+/* Everything on this dashboard is derived from the payments list. There is no
+   GET /merchant/me — the only merchant-scoped endpoint is /merchant/payments,
+   so balance is recomputed here rather than read from Merchant.balance. */
+function derive(rows: ApiPayment[]): MerchantData {
+  const now = new Date()
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+
+  const succeeded = rows.filter((p) => p.status === "SUCCEEDED")
+
+  const balance = succeeded.reduce((sum, p) => sum + p.merchantCredit, 0)
+
+  const today = succeeded.filter((p) => isSameDay(new Date(p.createdAt), now))
+  const yday = succeeded.filter((p) => isSameDay(new Date(p.createdAt), yesterday))
+
+  const thisMonth = succeeded.filter((p) => {
+    const d = new Date(p.createdAt)
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+  })
+
+  return {
+    businessName: "",
+    balance,
+    paymentsToday: today.length,
+    paymentsTodayDelta: today.length - yday.length,
+    paymentsThisMonth: thisMonth.length,
+    /* No endpoint exposes the merchant's own link count, so this stays 0.
+       Total payments is the closest honest stand-in. */
+    activeLinks: 0,
+    recentPayments: rows.slice(0, 5).map((p) => ({
+      id: p.id,
+      payer: p.payerEmail ?? "Guest",
+      amount: p.amountPaid,
+      date: p.createdAt,
+      status: p.status === "SUCCEEDED" ? "Received" : "Pending",
+    })),
+  }
 }
 function daysAgo(days: number, hours: number): string {
   const d = new Date()
@@ -64,8 +118,10 @@ const inr = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 0,
 })
 
-function formatINRFromPaise(paise: number): string {
-  return inr.format(paise / 100)
+/* Amounts are stored exactly as entered — same convention as
+   app/merchant/payments/page.tsx. No /100 here or the two pages disagree. */
+function formatAmount(amount: number): string {
+  return inr.format(amount)
 }
 
 function formatRelativeDate(iso: string): string {
@@ -233,7 +289,7 @@ function Sidebar({
 // Balance card (hero)
 // ---------------------------------------------------------------------------
 
-function BalanceCard({ balancePaise }: { balancePaise: number }) {
+function BalanceCard({ balance }: { balance: number }) {
   return (
     <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
       <div className="absolute inset-y-0 left-0 w-1 bg-indigo-600" />
@@ -241,7 +297,7 @@ function BalanceCard({ balancePaise }: { balancePaise: number }) {
         <div>
           <p className="text-sm font-medium text-slate-500">Available balance</p>
           <p className="mt-2 text-4xl font-semibold tracking-tight text-slate-900">
-            {formatINRFromPaise(balancePaise)}
+            {formatAmount(balance)}
           </p>
         </div>
         <div className="text-left sm:text-right">
@@ -394,7 +450,7 @@ function RecentPayments({ payments }: { payments: Payment[] }) {
                       <span className="font-medium text-slate-900">{p.payer}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-3.5 font-medium text-slate-900">{formatINRFromPaise(p.amountPaise)}</td>
+                  <td className="px-6 py-3.5 font-medium text-slate-900">{formatAmount(p.amount)}</td>
                   <td className="px-6 py-3.5 text-slate-500">{formatRelativeDate(p.date)}</td>
                   <td className="px-6 py-3.5 text-right">
                     <StatusPill status={p.status} />
@@ -452,12 +508,13 @@ function QuickActions() {
 
 export default function MerchantDashboardPage() {
   // Top-level state so real data can be plugged in later.
-  const [data] = useState<MerchantData>(EMPTY)
+  const [data, setData] = useState<MerchantData>(EMPTY)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [greeting, setGreeting] = useState("Welcome back")
   const [dateLabel, setDateLabel] = useState("")
   const router = useRouter()
   const [ready, setReady] = useState(false)
+  const [loadError, setLoadError] = useState("")
 
   useEffect(() => {
     const token = localStorage.getItem("merchant_token")
@@ -466,6 +523,37 @@ export default function MerchantDashboardPage() {
         return
     }
     setReady(true)
+
+    let cancelled = false
+
+    async function load(): Promise<void> {
+      try {
+        /* limit=100 so the today/month counts and the balance cover a useful
+           window. The default page size is 20, which would undercount. */
+        const res = await fetch(`${API}/merchant/payments?limit=100`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+
+        if (res.status === 401) {
+          localStorage.removeItem("merchant_token")
+          router.replace("/merchant/login")
+          return
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+        const body = await res.json()
+        if (cancelled) return
+
+        setData(derive(body.data ?? []))
+      } catch {
+        if (!cancelled) setLoadError("Could not load your dashboard. Refresh to try again.")
+      }
+    }
+
+    load()
+    return () => {
+      cancelled = true
+    }
   }, [router])
 
   // Time-of-day greeting + date are client-only to avoid SSR mismatch.
@@ -507,7 +595,13 @@ export default function MerchantDashboardPage() {
           </header>
 
           <div className="space-y-6">
-            <BalanceCard balancePaise={data.balancePaise} />
+            {loadError && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {loadError}
+              </p>
+            )}
+
+            <BalanceCard balance={data.balance} />
 
             <StatsRow data={data} />
 

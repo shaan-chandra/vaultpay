@@ -97,13 +97,14 @@ export default function CreatePaymentLinkPage() {
 
   if (link) {
     return (
-      <div className="mx-auto max-w-xl px-6 py-10">
-        <h1 className="text-2xl font-semibold text-slate-900">Your link is ready</h1>
+      <div className="min-h-screen bg-stone-50 px-6 py-10">
+        <div className="mx-auto max-w-xl">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Your link is ready</h1>
         <p className="mt-1 text-sm text-slate-500">
           Share this link or the QR code with your customer.
         </p>
 
-        <div className="mt-6 rounded-lg border border-slate-200 bg-white p-5">
+        <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
             Payment link
           </label>
@@ -115,7 +116,7 @@ export default function CreatePaymentLinkPage() {
             />
             <button
               onClick={handleCopy}
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
             >
               {copied ? "Copied" : "Copy"}
             </button>
@@ -138,18 +139,22 @@ export default function CreatePaymentLinkPage() {
         >
           Create another link
         </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-xl px-6 py-10">
-      <h1 className="text-2xl font-semibold text-slate-900">Create payment link</h1>
+    <div className="min-h-screen bg-stone-50 px-6 py-10">
+      <div className="mx-auto max-w-xl">
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+        Create payment link
+      </h1>
       <p className="mt-1 text-sm text-slate-500">
         Choose whether the customer types the amount or you set it.
       </p>
 
-      <div className="mt-6 space-y-5 rounded-lg border border-slate-200 bg-white p-5">
+      <div className="mt-6 space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
           <span className="text-sm font-medium text-slate-700">Amount</span>
           <div className="mt-2 grid grid-cols-2 gap-3">
@@ -179,7 +184,7 @@ export default function CreatePaymentLinkPage() {
               setTitle(e.target.value)
             }
             placeholder="Website design — October"
-            className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none"
+            className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
           />
         </div>
 
@@ -198,7 +203,7 @@ export default function CreatePaymentLinkPage() {
                 setAmount(e.target.value)
               }
               placeholder="1500"
-              className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none"
+              className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             />
             <p className="mt-1 text-xs text-slate-500">
               Shown to the customer as{" "}
@@ -211,16 +216,17 @@ export default function CreatePaymentLinkPage() {
         )}
 
         {error && (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</p>
         )}
 
         <button
           onClick={handleSubmit}
           disabled={saving}
-          className="w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+          className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
         >
           {saving ? "Creating…" : "Create link"}
         </button>
+      </div>
       </div>
     </div>
   );
