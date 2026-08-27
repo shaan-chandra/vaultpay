@@ -7,28 +7,44 @@ const API = "http://localhost:4000";
 const LOCALE = "en-IN";
 const CURRENCY = "INR";
 
-type LinkType = "OPEN" | "FIXED";
-
+/* Shape returned by GET /public/payment-links/:id
+   (findPublic strips `active` and nests the merchant) */
 type PublicPaymentLink = {
-  merchantName: string;
-  title: string;
-  type: LinkType;
+  id: string;
+  type: "OPEN" | "FIXED";
   amount: number | null;
-  active: boolean;
+  description: string | null;
+  merchant: { name: string; company: string };
 };
 
+/* Shape returned by POST /public/payment-links/pay — the Payment row itself */
 type PaymentResult = {
   id: string;
-  grossAmount: number;
-  commissionAmount: number;
-  netAmount: number;
+  amountPaid: number;
+  commissionPaise: number;
+  merchantCredit: number;
+  status: "PENDING" | "SUCCEEDED" | "FAILED" | "BLOCKED";
+  cardLast4: string | null;
+  processorRef: string | null;
 };
+
+const TEST_CARDS = [
+  { label: "Approved", number: "4242 4242 4242 4242" },
+  { label: "Declined", number: "4000 0000 0000 0002" },
+  { label: "Unknown card", number: "4111 1111 1111 1111" },
+];
 
 function money(value: number | string): string {
   return new Intl.NumberFormat(LOCALE, {
     style: "currency",
     currency: CURRENCY,
   }).format(Number(value) || 0);
+}
+
+/** Groups digits in fours as the user types: 4242424242424242 -> 4242 4242 ... */
+function formatCardInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 19);
+  return digits.replace(/(.{4})/g, "$1 ").trim();
 }
 
 export default function PayPage() {
@@ -38,7 +54,8 @@ export default function PayPage() {
   const [loadError, setLoadError] = useState("");
   const [linkData, setLinkData] = useState<PublicPaymentLink | null>(null);
 
-  const [payerName, setPayerName] = useState("");
+  const [payerEmail, setPayerEmail] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
   const [amount, setAmount] = useState("");
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState("");
@@ -55,20 +72,26 @@ export default function PayPage() {
           if (!cancelled) setLoadError("This payment link does not exist.");
           return;
         }
-        if (!res.ok) throw new Error("load failed");
-
-        const data = (await res.json()) as PublicPaymentLink;
-
-        if (!data.active) {
+        // findPublic throws GoneException (410) for deactivated links.
+        if (res.status === 410) {
           if (!cancelled) setLoadError("This payment link is no longer active.");
           return;
         }
+        if (!res.ok) throw new Error("load failed");
 
+        const data = (await res.json()) as PublicPaymentLink;
         if (cancelled) return;
+
         setLinkData(data);
         if (data.type === "FIXED" && data.amount !== null) {
           setAmount(String(data.amount));
         }
+
+        /* If a payer is signed in, prefill their email. This is what links the
+           payment back to their history — without it the row has no payerEmail
+           and never shows up on /payer. Checkout stays open to guests. */
+        const savedEmail = localStorage.getItem("payerEmail");
+        if (savedEmail) setPayerEmail(savedEmail);
       } catch {
         if (!cancelled) setLoadError("Could not load this payment link.");
       } finally {
@@ -83,36 +106,54 @@ export default function PayPage() {
   }, [linkId]);
 
   async function handlePay(): Promise<void> {
-    if (!payerName.trim()) {
-      setPayError("Enter your name.");
+    const digits = cardNumber.replace(/\D/g, "");
+    if (digits.length < 12) {
+      setPayError("Enter a card number.");
       return;
     }
+
+    const isFixed = linkData?.type === "FIXED";
     const value = Number(amount);
-    if (!amount || Number.isNaN(value) || value <= 0) {
-      setPayError("Enter an amount greater than 0.");
-      return;
+
+    if (!isFixed) {
+      if (!amount || !Number.isInteger(value) || value <= 0) {
+        setPayError("Enter a whole amount greater than 0.");
+        return;
+      }
     }
 
     setPayError("");
     setPaying(true);
 
     try {
-      const res = await fetch(`${API}/public/payments`, {
+      const res = await fetch(`${API}/public/payment-links/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           paymentLinkId: linkId,
-          payerName,
-          amount: value,
+          // FIXED links read the amount from the link; sending one is harmless
+          // but pointless, so omit it.
+          ...(isFixed ? {} : { amount: value }),
+          ...(payerEmail.trim() ? { payerEmail: payerEmail.trim() } : {}),
+          cardNumber,
         }),
       });
 
-      if (!res.ok) throw new Error("payment failed");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        // class-validator returns message as string | string[]
+        const detail = Array.isArray(body?.message)
+          ? body.message[0]
+          : body?.message;
+        throw new Error(detail || "Payment could not be completed.");
+      }
 
       const data = (await res.json()) as PaymentResult;
       setReceipt(data);
-    } catch {
-      setPayError("Payment could not be completed. Try again.");
+    } catch (err) {
+      setPayError(
+        err instanceof Error ? err.message : "Payment could not be completed.",
+      );
     } finally {
       setPaying(false);
     }
@@ -139,24 +180,60 @@ export default function PayPage() {
     );
   }
 
+  /* The API returns 200 for declines and blocks — the outcome lives in
+     `status`, not the HTTP code. Branch on it. */
   if (receipt) {
+    if (receipt.status === "SUCCEEDED") {
+      return (
+        <Shell>
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+            <span className="text-xl text-emerald-700">✓</span>
+          </div>
+          <h1 className="mt-4 text-xl font-semibold text-slate-900">
+            Payment received
+          </h1>
+          <p className="mt-1 text-sm text-slate-600">
+            {money(receipt.amountPaid)} paid to {linkData.merchant.name}.
+          </p>
+          <dl className="mt-6 space-y-2 border-t border-slate-200 pt-4 text-sm">
+            {payerEmail && <Row label="Paid by" value={payerEmail} />}
+            <Row label="For" value={linkData.description ?? "Payment"} />
+            {receipt.cardLast4 && (
+              <Row label="Card" value={`•••• ${receipt.cardLast4}`} />
+            )}
+            <Row label="Reference" value={receipt.id} />
+          </dl>
+          <p className="mt-6 text-xs text-slate-400">
+            Demo payment — no money actually moved.
+          </p>
+        </Shell>
+      );
+    }
+
+    /* FAILED and BLOCKED look the same to the payer on purpose. Telling
+       someone "our fraud engine stopped you" hands an attacker a signal
+       about which attempts are being detected. */
     return (
       <Shell>
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
-          <span className="text-xl text-emerald-700">✓</span>
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+          <span className="text-xl text-red-700">✕</span>
         </div>
-        <h1 className="mt-4 text-xl font-semibold text-slate-900">Payment received</h1>
+        <h1 className="mt-4 text-xl font-semibold text-slate-900">
+          Payment declined
+        </h1>
         <p className="mt-1 text-sm text-slate-600">
-          {money(receipt.grossAmount)} paid to {linkData.merchantName}.
+          This payment could not be completed. Try a different card, or contact{" "}
+          {linkData.merchant.name}.
         </p>
-        <dl className="mt-6 space-y-2 border-t border-slate-200 pt-4 text-sm">
-          <Row label="Paid by" value={payerName} />
-          <Row label="For" value={linkData.title} />
-          <Row label="Reference" value={receipt.id} />
-        </dl>
-        <p className="mt-6 text-xs text-slate-400">
-          Demo payment — no money actually moved.
-        </p>
+        <button
+          onClick={() => {
+            setReceipt(null);
+            setCardNumber("");
+          }}
+          className="mt-6 w-full rounded-md border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-900 hover:bg-slate-50"
+        >
+          Try another card
+        </button>
       </Shell>
     );
   }
@@ -169,9 +246,11 @@ export default function PayPage() {
         Payment to
       </p>
       <h1 className="mt-1 text-xl font-semibold text-slate-900">
-        {linkData.merchantName}
+        {linkData.merchant.name}
       </h1>
-      <p className="mt-1 text-sm text-slate-600">{linkData.title}</p>
+      {linkData.description && (
+        <p className="mt-1 text-sm text-slate-600">{linkData.description}</p>
+      )}
 
       <div className="mt-6 space-y-4">
         {isFixed ? (
@@ -192,28 +271,53 @@ export default function PayPage() {
               id="amount"
               type="number"
               min="1"
-              step="0.01"
+              step="1"
               value={amount}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setAmount(e.target.value)
-              }
-              placeholder="0.00"
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0"
               className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none"
             />
           </div>
         )}
 
         <div>
-          <label htmlFor="payerName" className="text-sm font-medium text-slate-700">
-            Your name
+          <label htmlFor="cardNumber" className="text-sm font-medium text-slate-700">
+            Card number
           </label>
           <input
-            id="payerName"
-            value={payerName}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setPayerName(e.target.value)
-            }
-            placeholder="Riya Sharma"
+            id="cardNumber"
+            inputMode="numeric"
+            autoComplete="cc-number"
+            value={cardNumber}
+            onChange={(e) => setCardNumber(formatCardInput(e.target.value))}
+            placeholder="4242 4242 4242 4242"
+            className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm tracking-wide focus:border-slate-900 focus:outline-none"
+          />
+          <div className="mt-2 flex flex-wrap gap-2">
+            {TEST_CARDS.map((card) => (
+              <button
+                key={card.number}
+                type="button"
+                onClick={() => setCardNumber(card.number)}
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:border-slate-400 hover:text-slate-900"
+              >
+                {card.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="payerEmail" className="text-sm font-medium text-slate-700">
+            Your email{" "}
+            <span className="font-normal text-slate-400">(optional)</span>
+          </label>
+          <input
+            id="payerEmail"
+            type="email"
+            value={payerEmail}
+            onChange={(e) => setPayerEmail(e.target.value)}
+            placeholder="riya@example.com"
             className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none"
           />
         </div>
@@ -233,7 +337,8 @@ export default function PayPage() {
         </button>
 
         <p className="text-center text-xs text-slate-400">
-          Demo payment — no real bank is connected.
+          Demo payment — no real bank is connected. Card numbers are never
+          stored.
         </p>
       </div>
     </Shell>

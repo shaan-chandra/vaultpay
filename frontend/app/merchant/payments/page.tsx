@@ -8,6 +8,30 @@ const API = "http://localhost:4000";
 const LOCALE = "en-IN";
 const CURRENCY = "INR";
 
+type FraudDecision = "ALLOW" | "REVIEW" | "BLOCK";
+
+/* Matches RuleResult in backend src/fraud/fraud.types.ts. `reasons` is a Json
+   column holding the array the engine returned, one entry per rule. */
+type RuleResult = {
+  rule: string;
+  score: number;
+  reason: string;
+  meta?: Record<string, unknown>;
+  degraded?: boolean;
+};
+
+type FraudScore = {
+  score: number;
+  decision: FraudDecision;
+  reasons: RuleResult[];
+};
+
+const DECISION_STYLE: Record<FraudDecision, string> = {
+  ALLOW: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  REVIEW: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  BLOCK: "bg-red-50 text-red-700 ring-red-600/20",
+};
+
 type Payment = {
   id: string;
   amountPaid: number;
@@ -22,6 +46,11 @@ type Payment = {
     description: string | null;
     type: string;
   };
+
+  /* Optional so the table still renders before listForMerchant adds the
+     select. Null is legitimate too — rows written before the fraud engine
+     existed have no FraudScore. */
+  fraudScore?: FraudScore | null;
 };
 
 type Pagination = {
@@ -222,6 +251,10 @@ export default function PaymentsPage() {
                     Payment link
                   </th>
 
+                  <th className="px-4 py-3 font-medium">
+                    Fraud
+                  </th>
+
                   <th className="px-4 py-3 text-right font-medium">
                     Amount paid
                   </th>
@@ -252,6 +285,10 @@ export default function PaymentsPage() {
 
                     <td className="px-4 py-3 text-slate-600">
                       {payment.paymentLink.description ?? "—"}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <FraudBadge fraudScore={payment.fraudScore} />
                     </td>
 
                     <td className="px-4 py-3 text-right tabular-nums text-slate-900">
@@ -285,6 +322,55 @@ export default function PaymentsPage() {
             </p>
           )}
       </div>
+    </div>
+  );
+}
+
+function FraudBadge({ fraudScore }: { fraudScore?: FraudScore | null }) {
+  const [open, setOpen] = useState(false);
+
+  if (!fraudScore) {
+    return <span className="text-xs text-slate-400">—</span>;
+  }
+
+  const reasons = Array.isArray(fraudScore.reasons) ? fraudScore.reasons : [];
+  const degraded = reasons.some((r) => r.degraded);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${DECISION_STYLE[fraudScore.decision]}`}
+      >
+        {fraudScore.decision}
+        <span className="tabular-nums opacity-70">{fraudScore.score}</span>
+        {degraded && (
+          <span title="A rule timed out; scored fail-open">*</span>
+        )}
+      </button>
+
+      {open && reasons.length > 0 && (
+        <div className="absolute left-0 top-full z-10 mt-1 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+          <ul className="space-y-2">
+            {reasons.map((r) => (
+              <li key={r.rule} className="flex gap-2 text-xs">
+                <span className="shrink-0 tabular-nums font-medium text-slate-900">
+                  +{r.score}
+                </span>
+                <span className="text-slate-600">{r.reason}</span>
+              </li>
+            ))}
+          </ul>
+
+          {degraded && (
+            <p className="mt-2 border-t border-slate-100 pt-2 text-xs text-amber-700">
+              A rule timed out and was scored 0 (fail-open).
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

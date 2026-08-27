@@ -8,11 +8,10 @@ import { MerchantModule } from './merchant/merchant.module';
 import { PaymentLinksModule } from './payment-links/payment-links.module';
 import { PayerModule } from './payer/payer.module';
 import { FraudModule } from './fraud/fraud.module';
-import { FraudModule } from './fraud/fraud.module';
-import { FraudModule } from './fraud/fraud.module';
+import { ProcessorModule } from './processor/processor.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({isGlobal:true}), SuperadminModule, PrismaModule, MerchantModule, PaymentLinksModule, PayerModule, FraudModule],
+  imports: [ConfigModule.forRoot({isGlobal:true}), SuperadminModule, PrismaModule, MerchantModule, PaymentLinksModule, PayerModule, FraudModule, ProcessorModule],
   controllers: [AppController],
   providers: [AppService],
 })

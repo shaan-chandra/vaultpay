@@ -2,12 +2,18 @@ import { Injectable, BadRequestException, NotFoundException, GoneException } fro
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentLinkDto } from '../dto/payment-link.dto';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
-import { PaymentLinkType } from '@prisma/client';
+import { PaymentLinkType, PaymentStatus, FraudDecision, Prisma } from '@prisma/client';
 import {PaymentListQueryDto } from "../dto/payment-list-query.dto"
+import { FraudService } from '../fraud/fraud.service';
+import { MockProcessorService } from '../processor/mock-processor.service';
+import { fingerprintPan, last4, normalizePan } from '../processor/card.util';
 
 @Injectable()
 export class PaymentLinksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService,
+              private readonly fraud: FraudService,
+              private readonly processor: MockProcessorService,
+  ) {}
 
   async create(merchantId: string, dto: CreatePaymentLinkDto) {
     // TODO 1: FIXED without amount → BadRequestException
@@ -68,74 +74,97 @@ export class PaymentLinksService {
     
   }
   async createPayment(dto: CreatePaymentDto) {
-    const findLink = await this.prisma.paymentLink.findUnique({
-        where: {id : dto.paymentLinkId},
-        include: {merchant: true}
-    })
-  // TODO 1: fetch the payment link WITH the merchant
-  //   const link = await this.prisma.paymentLink.findUnique({
-  //     where: { id: dto.paymentLinkId },
-  //     include: { merchant: true },
-  //   });
-  if (!findLink) {
-    throw new NotFoundException("Payment Link not found!")
+  const now = new Date();
+
+  const findLink = await this.prisma.paymentLink.findUnique({
+    where: { id: dto.paymentLinkId },
+    include: { merchant: true },
+  });
+
+  if (!findLink) throw new NotFoundException('Payment Link not found!');
+  if (!findLink.active) throw new GoneException('This payment link is no longer active');
+
+  let amountPaid: number;
+  if (findLink.type === PaymentLinkType.FIXED) {
+    amountPaid = findLink.amount!;
+  } else {
+    if (dto.amount == null) {
+      throw new BadRequestException('Amount is required for open payment links');
+    }
+    amountPaid = dto.amount;
   }
 
-  if (!findLink.active) {
-    throw new GoneException("This payment link is no longer active")
+  // card intake — `pan` never leaves this function
+  const pan = normalizePan(dto.cardNumber);
+  const cardFingerprint = fingerprintPan(pan);
+  const cardLast4 = last4(pan);
+
+  // 1. score (reads only, before the transaction)
+  const verdict = await this.fraud.evaluate({
+    merchantId: findLink.merchantId,
+    paymentLinkId: findLink.id,
+    amountPaise: amountPaid,
+    cardFingerprint,
+    payerEmail: dto.payerEmail,
+    now,
+  });
+
+  // 2. processor — skipped entirely on BLOCK
+  let status: PaymentStatus;
+  let processorRef: string | null = null;
+
+  if (verdict.decision === FraudDecision.BLOCK) {
+    status = PaymentStatus.BLOCKED;
+  } else {
+    const auth = await this.processor.authorize({ pan, amountPaise: amountPaid });
+    status = auth.approved ? PaymentStatus.SUCCEEDED : PaymentStatus.FAILED;
+    if (auth.approved) processorRef = auth.processorRef;
   }
 
-  // TODO 2: existence check
-  //   if (!link) throw new NotFoundException('Payment link not found');
+  const succeeded = status === PaymentStatus.SUCCEEDED;
 
-  // TODO 3: active check
-  //   if (!link.active) throw new GoneException('This payment link is no longer active');
+  const commissionPaise = succeeded
+    ? Math.floor((amountPaid * findLink.merchant.commissionPercent) / 10000)
+    : 0;
+  const merchantCredit = succeeded ? amountPaid - commissionPaise : 0;
 
-  // TODO 4: determine amountPaid based on type
-  //   let amountPaid: number;
-  //   if (link.type === PaymentLinkType.FIXED) {
-  //     amountPaid = link.amount!;  // FIXED links guarantee non-null amount by Day 10's business rule
-  //   } else {
-  //     if (dto.amount == null) throw new BadRequestException('Amount is required for open payment links');
-  //     amountPaid = dto.amount;
-  //   }
-    let amountPaid : number; 
-    if (findLink.type === PaymentLinkType.FIXED) {
-        amountPaid = findLink.amount!;
+  // 3. every write in one transaction
+  return this.prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.create({
+      data: {
+        paymentLinkId: findLink.id,
+        merchantId: findLink.merchantId,
+        amountPaid,
+        commissionPaise,
+        merchantCredit,
+        status,
+        payerEmail: dto.payerEmail,
+        cardFingerprint,
+        cardLast4,
+        processorRef,
+        createdAt: now,
+      },
+    });
+
+    await tx.fraudScore.create({
+      data: {
+        paymentId: payment.id,
+        score: verdict.score,
+        decision: verdict.decision,
+        reasons: verdict.reasons as unknown as Prisma.InputJsonValue,
+        createdAt: now,
+      },
+    });
+
+    if (succeeded) {
+      await tx.merchant.update({
+        where: { id: findLink.merchantId },
+        data: { balance: { increment: merchantCredit } },
+      });
     }
-    else {
-        if(dto.amount == null) {
-            throw new BadRequestException("Amount is required for open payment links")
-        }
-        amountPaid = dto.amount;
-    }
 
-  // TODO 5: compute commission and merchant credit
-  //   const commissionPaise = Math.floor((amountPaid * link.merchant.commissionPercent) / 10000);
-  //   const merchantCredit = amountPaid - commissionPaise;
-  const commissionPaise = Math.floor((amountPaid * findLink.merchant.commissionPercent) / 10000)
-  const merchantCredit = amountPaid - commissionPaise;
-
-  // TODO 6: THE TRANSACTION — both writes commit together or neither commits
-     return this.prisma.$transaction(async (tx) => {
-       const payment = await tx.payment.create({
-         data: {
-           paymentLinkId: findLink.id,
-           merchantId: findLink.merchantId,
-           amountPaid,
-           commissionPaise,
-           merchantCredit,
-           payerEmail: dto.payerEmail,
-           // status defaults to SUCCEEDED via the schema
-         },
-       });
-       await tx.merchant.update({
-         where: { id: findLink.merchantId },
-         data: { balance: { increment: merchantCredit } },
-       });
-  
-       return payment;
-     });
+    return payment;
+  });
 }
 async listForMerchant(merchantId: string, query: PaymentListQueryDto) {
   const page = query.page ?? 1;
@@ -161,7 +190,8 @@ async listForMerchant(merchantId: string, query: PaymentListQueryDto) {
         description: true,
         type: true,
       },
-    }
+    },
+    fraudScore: { select: { score: true, decision: true, reasons: true } },
     }
   })
 

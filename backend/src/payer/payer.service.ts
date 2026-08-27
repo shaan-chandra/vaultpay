@@ -60,27 +60,21 @@ export class PayerService {
     };
   }
 
-  async listPayments(payerId: string) {
-    const payments = await this.prisma.payment.findMany({
-      where: { payerId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        amountPaid: true,
-        status: true,
-        createdAt: true,
-        merchant: { select: { name: true } },
-        paymentLink: { select: { description: true } },
-      },
-    });
-
-    return payments.map((p) => ({
-      id: p.id,
-      merchantName: p.merchant.name,
-      title: p.paymentLink.description ?? '',
-      amount: p.amountPaid,
-      date: p.createdAt,
-      status: p.status,
-    }));
-  }
+ async listPayments(payerEmail: string) {
+  return this.prisma.payment.findMany({
+    where: {
+      payerEmail: { equals: payerEmail, mode: 'insensitive' },
+    },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      amountPaid: true,
+      status: true,
+      createdAt: true,
+      cardLast4: true,
+      merchant: { select: { name: true, company: true } },
+      paymentLink: { select: { description: true } },
+    },
+  });
+}
 }

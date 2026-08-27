@@ -1,4 +1,4 @@
-import { IsUUID, IsInt, IsOptional, IsEmail, Min, Max } from 'class-validator';
+import { IsUUID, IsInt, IsString, IsOptional, IsEmail, Min, Max, Matches } from 'class-validator';
 
 export class CreatePaymentDto {
     @IsUUID()
@@ -13,4 +13,8 @@ export class CreatePaymentDto {
     @IsOptional()
     @IsEmail()
     payerEmail? : string
+
+    @IsString()
+    @Matches(/^[0-9 ]{12,25}$/, { message: 'cardNumber must be a card number' })
+    cardNumber!: string;
 }

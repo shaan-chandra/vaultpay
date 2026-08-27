@@ -23,6 +23,6 @@ export class PayerController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('payer')
   listPayments(@Req() req: any) {
-    return this.payerService.listPayments(req.user.sub);
+    return this.payerService.listPayments(req.user.email);
   }
 }

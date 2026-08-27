@@ -3,20 +3,67 @@
 import type React from 'react'
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, Eye, EyeOff, Lock, Mail, User } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
+
 export function SignupForm() {
+  const router = useRouter()
+
   const [showPassword, setShowPassword] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    // Wire this up to your API. Available values: name, email, password
+    setError('')
+    setLoading(true)
+
+    try {
+      const res = await fetch(`${API}/payer/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+      })
+
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        // NestJS ValidationPipe returns `message` as an array of strings.
+        setError(
+          Array.isArray(data.message)
+            ? data.message.join(' ')
+            : (data.message ?? 'Could not create your account.'),
+        )
+        setLoading(false)
+        return
+      }
+
+      const token = data.access_token ?? data.token
+
+      // If signup doesn't return a token, send them to the login page instead
+      // of dropping them on /payer with no credentials.
+      if (!token) {
+        router.push('/')
+        return
+      }
+
+      localStorage.setItem('payerToken', token)
+      localStorage.setItem('payerName', data.payer?.name ?? data.name ?? name)
+      localStorage.setItem('payerEmail', data.payer?.email ?? email)
+
+      router.push('/payer')
+    } catch {
+      setError('Could not reach the server. Is the backend running?')
+      setLoading(false)
+    }
   }
 
   return (
@@ -32,6 +79,15 @@ export function SignupForm() {
       </div>
 
       <form className="mt-8 flex flex-col gap-5" onSubmit={handleSubmit}>
+        {error && (
+          <p
+            role="alert"
+            className="border-destructive/40 bg-destructive/10 text-destructive rounded-xl border px-4 py-3 text-sm"
+          >
+            {error}
+          </p>
+        )}
+
         <div className="flex flex-col gap-2">
           <Label htmlFor="name" className="text-foreground/90">
             Name
@@ -107,10 +163,20 @@ export function SignupForm() {
 
         <Button
           type="submit"
+          disabled={loading}
           className="bg-primary text-primary-foreground hover:bg-primary/90 group h-12 rounded-xl text-base font-semibold shadow-lg shadow-black/25 cursor-pointer"
         >
-          Create account
-          <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+          {loading ? (
+            <>
+              Creating account
+              <Loader2 className="size-4 animate-spin" />
+            </>
+          ) : (
+            <>
+              Create account
+              <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+            </>
+          )}
         </Button>
       </form>
 
