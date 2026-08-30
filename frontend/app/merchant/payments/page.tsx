@@ -3,6 +3,8 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { AppShell } from "@/components/app-shell";
+import { MERCHANT_NAV } from "@/lib/nav";
 
 const API = "http://localhost:4000";
 const LOCALE = "en-IN";
@@ -192,18 +194,16 @@ export default function PaymentsPage() {
   );
 
   return (
-    <div className="min-h-screen bg-stone-50 px-6 py-10">
-      <div className="mx-auto max-w-6xl">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-          Payments
-        </h1>
-
-        <p className="mt-1 text-sm text-slate-500">
-          Every payment made through your links, with the fraud score behind it.
-        </p>
-
+    <AppShell
+      role="merchant"
+      portal="Merchant"
+      nav={MERCHANT_NAV}
+      title="Payments"
+      description="Every payment made through your links, with the fraud score behind it."
+    >
+      <div>
         {!loading && !error && payments.length > 0 && (
-          <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Stat
               label="Payments"
               value={pagination?.total ?? payments.length}
@@ -367,7 +367,7 @@ export default function PaymentsPage() {
             </p>
           )}
       </div>
-    </div>
+    </AppShell>
   );
 }
 

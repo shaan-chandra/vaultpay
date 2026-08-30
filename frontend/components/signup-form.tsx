@@ -4,10 +4,11 @@ import type React from 'react'
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, User } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { AuthError, authInputClass, authSubmitClass } from '@/components/auth-shell'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
 
@@ -61,79 +62,67 @@ export function SignupForm() {
 
       router.push('/payer')
     } catch {
-      setError('Could not reach the server. Is the backend running?')
+      setError('Could not reach the server. Please check your connection and try again.')
       setLoading(false)
     }
   }
 
-  return (
-    <div className="border-border/70 bg-card w-full max-w-md rounded-3xl border p-8 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
-      <div className="flex flex-col gap-2">
-        <span className="bg-primary/30 border-border/70 text-foreground/90 w-fit rounded-full border px-3 py-1 text-xs font-medium tracking-wide uppercase">
-          VaultPay
-        </span>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">Create your account</h1>
-        <p className="text-muted-foreground leading-relaxed text-pretty">
-          Sign up to keep track of every payment you make.
-        </p>
-      </div>
+  const describedBy = error ? 'signup-error' : undefined
 
-      <form className="mt-8 flex flex-col gap-5" onSubmit={handleSubmit}>
-        {error && (
-          <p
-            role="alert"
-            className="border-destructive/40 bg-destructive/10 text-destructive rounded-xl border px-4 py-3 text-sm"
-          >
-            {error}
-          </p>
-        )}
+  return (
+    <div>
+      <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
+      <p className="text-muted-foreground mt-1.5 text-sm">
+        Keep every payment you make in one place.
+      </p>
+
+      <form className="mt-8 flex flex-col gap-5" onSubmit={handleSubmit} noValidate>
+        {error && <AuthError id="signup-error" message={error} />}
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="name" className="text-foreground/90">
-            Name
+          <Label htmlFor="name" className="text-foreground text-sm font-medium">
+            Full name
           </Label>
-          <div className="relative">
-            <User className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-            <Input
-              id="name"
-              name="name"
-              type="text"
-              autoComplete="name"
-              required
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Riya Sharma"
-              className="bg-input/60 placeholder:text-muted-foreground/70 h-12 rounded-xl pl-10"
-            />
-          </div>
+          <Input
+            id="name"
+            name="name"
+            type="text"
+            autoComplete="name"
+            required
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Riya Sharma"
+            aria-invalid={Boolean(error)}
+            aria-describedby={describedBy}
+            className={authInputClass}
+          />
         </div>
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="email" className="text-foreground/90">
+          <Label htmlFor="email" className="text-foreground text-sm font-medium">
             Email
           </Label>
-          <div className="relative">
-            <Mail className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              className="bg-input/60 placeholder:text-muted-foreground/70 h-12 rounded-xl pl-10"
-            />
-          </div>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@example.com"
+            aria-invalid={Boolean(error)}
+            aria-describedby={describedBy}
+            className={authInputClass}
+          />
         </div>
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="password" className="text-foreground/90">
+          <Label htmlFor="password" className="text-foreground text-sm font-medium">
             Password
           </Label>
           <div className="relative">
-            <Lock className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
             <Input
               id="password"
               name="password"
@@ -143,38 +132,35 @@ export function SignupForm() {
               minLength={8}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="••••••••"
-              aria-describedby="password-hint"
-              className="bg-input/60 placeholder:text-muted-foreground/70 h-12 rounded-xl pr-11 pl-10"
+              placeholder="At least 8 characters"
+              aria-invalid={Boolean(error)}
+              aria-describedby={`password-hint${describedBy ? ` ${describedBy}` : ''}`}
+              className={`${authInputClass} pr-11`}
             />
             <button
               type="button"
               onClick={() => setShowPassword((value) => !value)}
-              className="text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute top-1/2 right-3 -translate-y-1/2 rounded-md p-1 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+              className="text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded-md p-1.5 transition-colors focus-visible:ring-3 focus-visible:outline-none"
             >
               {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               <span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>
             </button>
           </div>
           <p id="password-hint" className="text-muted-foreground text-xs">
-            At least 8 characters.
+            Use at least 8 characters.
           </p>
         </div>
 
-        <Button
-          type="submit"
-          disabled={loading}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 group h-12 rounded-xl text-base font-semibold shadow-lg shadow-black/25 cursor-pointer"
-        >
+        <Button type="submit" disabled={loading} className={authSubmitClass}>
           {loading ? (
             <>
-              Creating account
               <Loader2 className="size-4 animate-spin" />
+              Creating account
             </>
           ) : (
             <>
               Create account
-              <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              <ArrowRight className="size-4" />
             </>
           )}
         </Button>
@@ -182,7 +168,10 @@ export function SignupForm() {
 
       <p className="text-muted-foreground mt-8 text-center text-sm">
         {'Already have an account? '}
-        <Link href="/" className="text-accent font-medium underline-offset-4 hover:underline">
+        <Link
+          href="/"
+          className="text-primary focus-visible:ring-ring rounded font-medium underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:outline-none"
+        >
           Sign in
         </Link>
       </p>

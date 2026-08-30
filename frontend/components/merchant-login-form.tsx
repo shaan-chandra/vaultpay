@@ -2,24 +2,24 @@
 
 import type React from 'react'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { AuthError, authInputClass, authSubmitClass } from '@/components/auth-shell'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
-const REMEMBERED_EMAIL = 'vaultpay.rememberedEmail'
+const REMEMBERED_EMAIL = 'vaultpay.rememberedMerchantEmail'
 
-export function LoginForm() {
+export function MerchantLoginForm() {
   const router = useRouter()
 
-  const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -38,7 +38,7 @@ export function LoginForm() {
     setLoading(true)
 
     try {
-      const res = await fetch(`${API}/payer/login`, {
+      const res = await fetch(`${API}/merchant/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -64,41 +64,33 @@ export function LoginForm() {
         return
       }
 
-      localStorage.setItem('payerToken', token)
-
-      const name = data.payer?.name ?? data.name
-      if (name) localStorage.setItem('payerName', name)
-
-      // Checkout prefills this so the payment is attributable to the payer.
-      localStorage.setItem('payerEmail', data.payer?.email ?? email)
+      localStorage.setItem('merchant_token', token)
 
       if (remember) localStorage.setItem(REMEMBERED_EMAIL, email)
       else localStorage.removeItem(REMEMBERED_EMAIL)
 
-      // Deliberately leaving `loading` true: the button stays disabled while
-      // the route transition runs, and this component unmounts on the way out.
-      router.push('/payer')
+      router.push('/merchant/dashboard')
     } catch {
       setError('Could not reach the server. Please check your connection and try again.')
       setLoading(false)
     }
   }
 
-  const describedBy = error ? 'login-error' : undefined
+  const describedBy = error ? 'merchant-login-error' : undefined
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Merchant sign in</h1>
       <p className="text-muted-foreground mt-1.5 text-sm">
-        Access your receipts and payment history.
+        Manage payment links, settlements and fraud decisions.
       </p>
 
       <form className="mt-8 flex flex-col gap-5" onSubmit={handleSubmit} noValidate>
-        {error && <AuthError id="login-error" message={error} />}
+        {error && <AuthError id="merchant-login-error" message={error} />}
 
         <div className="flex flex-col gap-2">
           <Label htmlFor="email" className="text-foreground text-sm font-medium">
-            Email
+            Business email
           </Label>
           <Input
             id="email"
@@ -109,7 +101,7 @@ export function LoginForm() {
             autoFocus
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@example.com"
+            placeholder="you@business.com"
             aria-invalid={Boolean(error)}
             aria-describedby={describedBy}
             className={authInputClass}
@@ -175,19 +167,13 @@ export function LoginForm() {
       </form>
 
       <p className="text-muted-foreground mt-8 text-center text-sm">
-        {"Don't have an account? "}
-        <Link
-          href="/signup"
-          className="text-primary focus-visible:ring-ring rounded font-medium underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:outline-none"
-        >
-          Create one
-        </Link>
+        Merchant accounts are provisioned by VaultPay. Contact your administrator for access.
       </p>
 
       <p className="text-muted-foreground/80 border-border mt-10 border-t pt-6 text-center text-xs">
-        {'Merchant? '}
-        <Link href="/merchant/login" className="hover:text-foreground underline underline-offset-4">
-          Sign in to the merchant portal
+        {'Paying an invoice? '}
+        <Link href="/" className="hover:text-foreground underline underline-offset-4">
+          Sign in as a payer
         </Link>
       </p>
     </div>

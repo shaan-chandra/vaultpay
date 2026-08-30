@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, X, LogOut, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, X, Search, TriangleAlert, Loader2 } from "lucide-react";
+import { AppShell } from "@/components/app-shell";
+import { SUPERADMIN_NAV } from "@/lib/nav";
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -12,7 +17,7 @@ type Merchant = {
   company: string;
   email: string;
   contact: string;
-  balance: number;           // paise (integer)
+  balance: number;           // whole rupees, same unit the payment pages use
   commissionPercent: number; // decimal percent, e.g. 2.5
 };
 
@@ -33,13 +38,12 @@ const initialMerchants: Merchant[] = [];
 // ─────────────────────────────────────────────────────────────
 // Formatters
 // ─────────────────────────────────────────────────────────────
-function formatMoney(paise: number): string {
-  const rupees = paise / 100;
+function formatMoney(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
     minimumFractionDigits: 2,
-  }).format(rupees);
+  }).format(amount);
 }
 
 function formatPercent(pct: number): string {
@@ -76,36 +80,44 @@ export default function SuperAdminDashboard() {
   const [merchants, setMerchants] = useState<Merchant[]>(initialMerchants);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [query, setQuery] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
-  // TODO: on mount, fetch merchants from your backend
-  // useEffect(() => {
-  //   const token = localStorage.getItem("token");
-  //   fetch("http://localhost:3000/superadmin/merchants", {
-  //     headers: { Authorization: `Bearer ${token}` },
-  //   })
-  //     .then((r) => r.json())
-  //     .then((data: Merchant[]) => setMerchants(data));
-  // }, []);
-useEffect(() => {
-  async function loadMerchants() {
-    try {
-      const token = localStorage.getItem("superadmin_token")
-      const res = await fetch("http://localhost:4000/superadmin/merchant", { headers:
-        {Authorization: `Bearer ${token}`}
+  useEffect(() => {
+    async function loadMerchants() {
+      const token = localStorage.getItem("superadmin_token");
+      if (!token) {
+        router.replace("/superadmin/login");
+        return;
       }
-      )
-      if (!res.ok) {
-        throw new Error(`API returned ${res.status}`)
+
+      try {
+        const res = await fetch(`${API}/superadmin/merchant`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        // An expired or rotated-secret token lands here; don't leave the admin
+        // staring at an empty table wondering where their merchants went.
+        if (res.status === 401 || res.status === 403) {
+          localStorage.removeItem("superadmin_token");
+          router.replace("/superadmin/login");
+          return;
+        }
+
+        if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+
+        setMerchants((await res.json()) as Merchant[]);
+        setError(null);
+      } catch {
+        setError("Could not load merchants. Check that the server is running, then retry.");
+      } finally {
+        setLoading(false);
       }
-      const data: Merchant[] = await res.json()
-      setMerchants(data);
     }
-    catch (err) {
-      console.error("Failed to load merchants: ", err)
-    }
-  }
-  loadMerchants()
-}, [])
+
+    void loadMerchants();
+  }, [router]);
 
   const filtered = merchants.filter((m) => {
     if (!query) return true;
@@ -129,47 +141,25 @@ useEffect(() => {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 text-slate-900 font-sans">
-      {/* Top nav */}
-      <header className="border-b border-slate-200 bg-white">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-sm bg-slate-900" />
-            <span className="font-semibold tracking-tight">Payflow</span>
-            <span className="ml-2 text-xs uppercase tracking-widest text-slate-500">
-              SuperAdmin
-            </span>
-          </div>
-          <button
-            className="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1.5"
-            // TODO: clear token from localStorage and redirect to /login
-          >
-            <LogOut size={14} />
-            Log out
-          </button>
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-6 py-10">
-        {/* Page header */}
-        <div className="flex items-end justify-between mb-8">
-          <div>
-            <p className="text-xs uppercase tracking-widest text-slate-500 mb-1">
-              Overview
-            </p>
-            <h1 className="text-3xl font-semibold tracking-tight">Merchants</h1>
-          </div>
-          <button
-            onClick={() => setModalOpen(true)}
-            className="bg-slate-900 cursor-pointer hover:bg-slate-800 text-white text-sm px-4 py-2.5 rounded-md flex items-center gap-1.5 shadow-sm"
-          >
-            <Plus size={16} />
-            Add merchant
-          </button>
-        </div>
-
+    <AppShell
+      role="superadmin"
+      portal="Administrator"
+      nav={SUPERADMIN_NAV}
+      title="Merchants"
+      description="Onboard merchants and review platform balances."
+      actions={
+        <button
+          onClick={() => setModalOpen(true)}
+          className="bg-indigo-600 cursor-pointer hover:bg-indigo-700 text-white text-sm px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+        >
+          <Plus size={16} />
+          Add merchant
+        </button>
+      }
+    >
+      <>
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-10">
+        <div className="grid gap-4 sm:grid-cols-3 mb-8">
           <StatCard label="Total merchants" value={merchants.length.toString()} />
           <StatCard
             label="Total balance held"
@@ -200,7 +190,23 @@ useEffect(() => {
             </span>
           </div>
 
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="py-16 flex items-center justify-center gap-2 text-sm text-slate-500">
+              <Loader2 size={15} className="animate-spin" />
+              Loading merchants…
+            </div>
+          ) : error ? (
+            <div className="py-14 px-6 flex flex-col items-center text-center">
+              <TriangleAlert size={20} className="text-amber-600" />
+              <p className="mt-3 text-sm text-slate-700">{error}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="mt-4 text-sm px-3.5 py-2 rounded-md border border-slate-300 hover:bg-slate-50 cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          ) : filtered.length === 0 ? (
             <EmptyState hasMerchants={merchants.length > 0} />
           ) : (
             <table className="w-full text-sm">
@@ -253,15 +259,15 @@ useEffect(() => {
             </table>
           )}
         </div>
-      </main>
 
-      {modalOpen && (
-        <AddMerchantModal
-          onClose={() => setModalOpen(false)}
-          onCreated={handleCreated}
-        />
-      )}
-    </div>
+        {modalOpen && (
+          <AddMerchantModal
+            onClose={() => setModalOpen(false)}
+            onCreated={handleCreated}
+          />
+        )}
+      </>
+    </AppShell>
   );
 }
 
@@ -343,7 +349,8 @@ function AddMerchantModal({ onClose, onCreated }: AddMerchantModalProps) {
     setError(null);
 
     // ───────────────────────────────────────────────────
-    // TODO: replace this mock with a real POST to your backend.
+    // NOTE: the commented block below is stale. Send commissionPercent as a plain
+    // percent (2.5) — the backend converts it to basis points itself.
     //
     // const token = localStorage.getItem("token");
     // const res = await fetch("http://localhost:3000/superadmin/merchants", {
@@ -375,7 +382,7 @@ function AddMerchantModal({ onClose, onCreated }: AddMerchantModalProps) {
     // ───────────────────────────────────────────────────
     try {
       const token = localStorage.getItem("superadmin_token")
-      const res = await fetch("http://localhost:4000/superadmin/merchant",{
+      const res = await fetch(`${API}/superadmin/merchant`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -389,25 +396,28 @@ function AddMerchantModal({ onClose, onCreated }: AddMerchantModalProps) {
           password: form.password, 
           commissionPercent: parseFloat(form.commissionPercent)
         })
-      }
-      )
-    }
-    catch (err){
-      console.error("Post failed: ", err)
-    }
+      })
 
-    // Fake success for the mock:
-    await new Promise((r) => setTimeout(r, 400));
-    onCreated({
-      id: Math.random().toString(36).slice(2, 10),
-      name: form.name,
-      company: form.company,
-      email: form.email,
-      contact: form.contact,
-      balance: 0,
-      commissionPercent: parseFloat(form.commissionPercent),
-    });
-    setSubmitting(false);
+      const body = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        setError(
+          Array.isArray(body.message)
+            ? body.message.join(" ")
+            : (body.message ?? "Failed to add merchant."),
+        )
+        setSubmitting(false)
+        return
+      }
+
+      // POST echoes commissionPercent in basis points while GET returns a plain
+      // percent, so normalise before it reaches the table.
+      onCreated({ ...body, commissionPercent: body.commissionPercent / 100 } as Merchant)
+    } catch {
+      setError("Could not reach the server. Please try again.")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -457,9 +467,12 @@ function AddMerchantModal({ onClose, onCreated }: AddMerchantModalProps) {
               label="Contact"
               value={form.contact}
               onChange={(v) => update("contact", v)}
-              placeholder="+91 98…"
+              placeholder="9876543210"
               required
               mono
+              maxLength={10}
+              pattern="[0-9]{10}"
+              title="10 digits, no spaces or country code"
             />
           </div>
           <Field

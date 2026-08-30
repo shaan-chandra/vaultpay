@@ -1,36 +1,24 @@
 'use client'
 
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { AuthError, authInputClass, authSubmitClass } from '@/components/auth-shell'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
-const REMEMBERED_EMAIL = 'vaultpay.rememberedEmail'
 
-export function LoginForm() {
+export function SuperadminLoginForm() {
   const router = useRouter()
 
-  const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [remember, setRemember] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    const saved = localStorage.getItem(REMEMBERED_EMAIL)
-    if (saved) {
-      setEmail(saved)
-      setRemember(true)
-    }
-  }, [])
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -38,7 +26,7 @@ export function LoginForm() {
     setLoading(true)
 
     try {
-      const res = await fetch(`${API}/payer/login`, {
+      const res = await fetch(`${API}/superadmin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -64,37 +52,25 @@ export function LoginForm() {
         return
       }
 
-      localStorage.setItem('payerToken', token)
-
-      const name = data.payer?.name ?? data.name
-      if (name) localStorage.setItem('payerName', name)
-
-      // Checkout prefills this so the payment is attributable to the payer.
-      localStorage.setItem('payerEmail', data.payer?.email ?? email)
-
-      if (remember) localStorage.setItem(REMEMBERED_EMAIL, email)
-      else localStorage.removeItem(REMEMBERED_EMAIL)
-
-      // Deliberately leaving `loading` true: the button stays disabled while
-      // the route transition runs, and this component unmounts on the way out.
-      router.push('/payer')
+      localStorage.setItem('superadmin_token', token)
+      router.push('/superadmin/dashboard')
     } catch {
       setError('Could not reach the server. Please check your connection and try again.')
       setLoading(false)
     }
   }
 
-  const describedBy = error ? 'login-error' : undefined
+  const describedBy = error ? 'superadmin-login-error' : undefined
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Administrator sign in</h1>
       <p className="text-muted-foreground mt-1.5 text-sm">
-        Access your receipts and payment history.
+        Restricted access. Onboard merchants and review platform balances.
       </p>
 
       <form className="mt-8 flex flex-col gap-5" onSubmit={handleSubmit} noValidate>
-        {error && <AuthError id="login-error" message={error} />}
+        {error && <AuthError id="superadmin-login-error" message={error} />}
 
         <div className="flex flex-col gap-2">
           <Label htmlFor="email" className="text-foreground text-sm font-medium">
@@ -109,7 +85,7 @@ export function LoginForm() {
             autoFocus
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@example.com"
+            placeholder="admin@vaultpay.com"
             aria-invalid={Boolean(error)}
             aria-describedby={describedBy}
             className={authInputClass}
@@ -145,20 +121,6 @@ export function LoginForm() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <Checkbox
-            id="remember"
-            checked={remember}
-            onCheckedChange={(checked) => setRemember(checked === true)}
-          />
-          <Label
-            htmlFor="remember"
-            className="text-muted-foreground cursor-pointer text-sm font-normal"
-          >
-            Remember my email on this device
-          </Label>
-        </div>
-
         <Button type="submit" disabled={loading} className={authSubmitClass}>
           {loading ? (
             <>
@@ -174,21 +136,8 @@ export function LoginForm() {
         </Button>
       </form>
 
-      <p className="text-muted-foreground mt-8 text-center text-sm">
-        {"Don't have an account? "}
-        <Link
-          href="/signup"
-          className="text-primary focus-visible:ring-ring rounded font-medium underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:outline-none"
-        >
-          Create one
-        </Link>
-      </p>
-
       <p className="text-muted-foreground/80 border-border mt-10 border-t pt-6 text-center text-xs">
-        {'Merchant? '}
-        <Link href="/merchant/login" className="hover:text-foreground underline underline-offset-4">
-          Sign in to the merchant portal
-        </Link>
+        All administrator activity is attributable to your account.
       </p>
     </div>
   )

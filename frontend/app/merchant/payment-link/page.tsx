@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import QRCode from "qrcode";
+import { AppShell } from "@/components/app-shell";
+import { MERCHANT_NAV } from "@/lib/nav";
 
 const API = "http://localhost:4000";
 const LOCALE = "en-IN";
@@ -97,14 +99,15 @@ export default function CreatePaymentLinkPage() {
 
   if (link) {
     return (
-      <div className="min-h-screen bg-stone-50 px-6 py-10">
-        <div className="mx-auto max-w-xl">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Your link is ready</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Share this link or the QR code with your customer.
-        </p>
-
-        <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <AppShell
+        role="merchant"
+        portal="Merchant"
+        nav={MERCHANT_NAV}
+        title="Your link is ready"
+        description="Share this link or the QR code with your customer."
+      >
+        <div className="max-w-xl">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
             Payment link
           </label>
@@ -140,21 +143,21 @@ export default function CreatePaymentLinkPage() {
           Create another link
         </button>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 px-6 py-10">
-      <div className="mx-auto max-w-xl">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-        Create payment link
-      </h1>
-      <p className="mt-1 text-sm text-slate-500">
-        Choose whether the customer types the amount or you set it.
-      </p>
+    <AppShell
+      role="merchant"
+      portal="Merchant"
+      nav={MERCHANT_NAV}
+      title="Create payment link"
+      description="Choose whether the customer types the amount or you set it."
+    >
+      <div className="max-w-xl">
 
-      <div className="mt-6 space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
           <span className="text-sm font-medium text-slate-700">Amount</span>
           <div className="mt-2 grid grid-cols-2 gap-3">
@@ -228,7 +231,7 @@ export default function CreatePaymentLinkPage() {
         </button>
       </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
 

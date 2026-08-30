@@ -2,7 +2,31 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f172a;
+
+  /* Navy anchor for the auth brand panel. */
+  --deep: #0b1220;
+
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+
+  --muted: #f8fafc;
+  --muted-foreground: #64748b;
+
+  --accent: #4f46e5;
+  --accent-foreground: #ffffff;
+
+  --destructive: #dc2626;
+
+  --border: #e2e8f0;
+  --input: #cbd5e1;
+  --ring: #4f46e5;
 }
 
 @theme inline {
@@ -27,59 +51,33 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --animate-float: float 18s ease-in-out infinite;
-  --animate-rise: rise linear infinite;
+  --animate-float: float 22s ease-in-out infinite;
 
   @keyframes float {
     0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-    50% { transform: translate3d(0, -6%, 0) scale(1.06); }
-  }
-
-  @keyframes rise {
-    0% { transform: translate3d(0, 12vh, 0) scale(0.9); opacity: 0; }
-    12% { opacity: 1; }
-    88% { opacity: 1; }
-    100% { transform: translate3d(2vw, -105vh, 0) scale(1.15); opacity: 0; }
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    50% { transform: translate3d(0, -4%, 0) scale(1.04); }
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Purple theme, scoped — add className="aurora" to a page's wrapper to use it */
-.Vaultpay {
-  --background: oklch(0.24 0.11 300);
-  --deep: oklch(0.16 0.08 297);
-  --foreground: oklch(0.97 0.015 310);
-
-  --card: oklch(0.97 0.015 310 / 10%);
-  --card-foreground: oklch(0.97 0.015 310);
-
-  --primary: oklch(0.66 0.23 305);
-  --primary-foreground: oklch(0.99 0.01 310);
-
-  --secondary: oklch(0.97 0.015 310 / 12%);
-  --secondary-foreground: oklch(0.97 0.015 310);
-  --muted: oklch(0.97 0.015 310 / 8%);
-  --muted-foreground: oklch(0.82 0.04 310 / 78%);
-
-  --accent: oklch(0.78 0.16 350);
-  --accent-foreground: oklch(0.2 0.09 300);
-
-  --destructive: oklch(0.66 0.2 20);
-  --border: oklch(0.97 0.015 310 / 18%);
-  --input: oklch(0.97 0.015 310 / 12%);
-  --ring: oklch(0.78 0.16 350);
-
-  color: var(--foreground);
+/* Faint blueprint grid for the dark auth panel. */
+.auth-grid {
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px);
+  background-size: 64px 64px;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+

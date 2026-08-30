@@ -3,17 +3,14 @@
 import { useState, useEffect } from "react"
 import {useRouter} from "next/navigation"
 import {
-  Home,
   Link2,
   Receipt,
-  Settings,
-  LogOut,
   TrendingUp,
   ArrowUpRight,
   Lightbulb,
-  Menu,
-  X,
 } from "lucide-react"
+import { AppShell } from "@/components/app-shell"
+import { MERCHANT_NAV } from "@/lib/nav"
 
 // ---------------------------------------------------------------------------
 // Types + placeholder data
@@ -162,127 +159,6 @@ function initials(name: string): string {
     .slice(0, 2)
     .join("")
     .toUpperCase()
-}
-
-// ---------------------------------------------------------------------------
-// Sidebar
-// ---------------------------------------------------------------------------
-
-const NAV_ITEMS = [
-  { key: "dashboard", label: "Dashboard", icon: Home, href: "/merchant/dashboard" },
-  { key: "links", label: "Payment Links", icon: Link2, href: "/merchant/payment-link" },
-  { key: "payments", label: "Payments", icon: Receipt, href: "/merchant/payments" },
-]
-
-function Sidebar({
-  businessName,
-  active,
-  mobileOpen,
-  onCloseMobile,
-}: {
-  businessName: string
-  active: string
-  mobileOpen: boolean
-  onCloseMobile: () => void
-}) {
-    const router = useRouter()
-  return (
-    <>
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <button
-          aria-label="Close menu"
-          onClick={onCloseMobile}
-          className="fixed inset-0 z-30 bg-slate-900/20 lg:hidden"
-        />
-      )}
-
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:translate-x-0 ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        {/* Brand */}
-        <div className="flex items-center justify-between px-5 py-5">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
-              <span className="text-sm font-bold text-white">V</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-base font-semibold tracking-tight text-slate-900">VaultPay</span>
-              <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                Merchant
-              </span>
-            </div>
-          </div>
-          <button
-            aria-label="Close menu"
-            onClick={onCloseMobile}
-            className="rounded-md p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-600 lg:hidden"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 space-y-1 px-3 py-2">
-          {NAV_ITEMS.map((item) => {
-            const isActive = item.key === active
-            const Icon = item.icon
-            return (
-              <a
-                key={item.key}
-                href={item.href}
-                className={`group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                  isActive
-                    ? "bg-indigo-50 text-indigo-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <Icon className={`h-[18px] w-[18px] ${isActive ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-600"}`} />
-                <span>{item.label}</span>
-                {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-indigo-600" />}
-              </a>
-            )
-          })}
-        </nav>
-
-        {/* Settings pinned near bottom */}
-        <div className="px-3 pb-2">
-          <a
-            href="/merchant/settings"
-            className="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-50 hover:text-slate-900"
-          >
-            <Settings className="h-[18px] w-[18px] text-slate-400 group-hover:text-slate-600" />
-            <span>Settings</span>
-          </a>
-        </div>
-
-        {/* Merchant profile card */}
-        <div className="border-t border-slate-200 p-3">
-          <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
-              {initials(businessName)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-slate-900">{businessName}</p>
-              <p className="truncate text-xs text-slate-400">Merchant account</p>
-            </div>
-            <button
-              aria-label="Log out"
-              onClick = {() => {
-                localStorage.removeItem("merchant_token")
-                router.push("/merchant/login")
-              }}
-              className="rounded-md p-1.5 text-slate-400 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-700"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </aside>
-    </>
-  )
 }
 
 // ---------------------------------------------------------------------------
@@ -509,7 +385,6 @@ function QuickActions() {
 export default function MerchantDashboardPage() {
   // Top-level state so real data can be plugged in later.
   const [data, setData] = useState<MerchantData>(EMPTY)
-  const [mobileOpen, setMobileOpen] = useState(false)
   const [greeting, setGreeting] = useState("Welcome back")
   const [dateLabel, setDateLabel] = useState("")
   const router = useRouter()
@@ -564,58 +439,33 @@ export default function MerchantDashboardPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-stone-50 text-slate-900">
-      <Sidebar
-        businessName={data.businessName}
-        active="dashboard"
-        mobileOpen={mobileOpen}
-        onCloseMobile={() => setMobileOpen(false)}
-      />
+    <AppShell
+      role="merchant"
+      portal="Merchant"
+      nav={MERCHANT_NAV}
+      title={`${greeting}, ${data.businessName}`}
+      description={dateLabel}
+    >
+      <div className="space-y-6">
+        {loadError && (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {loadError}
+          </p>
+        )}
 
-      <div className="lg:pl-60">
-        {/* Mobile top bar */}
-        <div className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
-          <button
-            aria-label="Open menu"
-            onClick={() => setMobileOpen(true)}
-            className="rounded-md p-1.5 text-slate-500 hover:bg-slate-50"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-          <span className="text-sm font-semibold text-slate-900">VaultPay</span>
-        </div>
+        <BalanceCard balance={data.balance} />
 
-        <main className="mx-auto max-w-5xl p-4 lg:p-8">
-          {/* Greeting */}
-          <header className="mb-8">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              {greeting}, {data.businessName}
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">{dateLabel}</p>
-          </header>
+        <StatsRow data={data} />
 
-          <div className="space-y-6">
-            {loadError && (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {loadError}
-              </p>
-            )}
-
-            <BalanceCard balance={data.balance} />
-
-            <StatsRow data={data} />
-
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-              <div className="lg:col-span-3">
-                <RecentPayments payments={data.recentPayments} />
-              </div>
-              <div className="lg:col-span-2">
-                <QuickActions />
-              </div>
-            </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+          <div className="lg:col-span-3">
+            <RecentPayments payments={data.recentPayments} />
           </div>
-        </main>
+          <div className="lg:col-span-2">
+            <QuickActions />
+          </div>
+        </div>
       </div>
-    </div>
+    </AppShell>
   )
 }

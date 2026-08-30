@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ShieldCheck,
   Wallet,
   ReceiptText,
   Store,
   Search,
   ChevronDown,
-  LogOut,
 } from 'lucide-react';
+import { AppShell } from '@/components/app-shell';
+import { PAYER_NAV } from '@/lib/nav';
 
 /* ---------------------------------------------------------------------------
  * EXPECTED API SHAPE — GET /payer/payments
@@ -154,48 +154,17 @@ export default function PayerPaymentsPage() {
     [payments],
   );
 
-  const logout = () => {
-    localStorage.removeItem('payerToken');
-    localStorage.removeItem('payerName');
-    router.push('/');
-  };
-
   return (
-    <main className="min-h-screen bg-[#F2F6F7] px-6 py-10">
-      <div className="mx-auto w-full max-w-3xl">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-emerald-700 shadow-sm">
-              <ShieldCheck className="h-4 w-4" />
-              VaultPay
-            </span>
-            <h1 className="mt-4 text-5xl font-bold tracking-tight text-[#0B2B2B]">
-              Your payments
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-3 pt-1">
-            <div className="flex items-center gap-3 rounded-full bg-white py-2 pl-2 pr-5 shadow-sm">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-700 text-sm font-semibold text-white">
-                {initials(payerName || 'You')}
-              </span>
-              <span className="text-sm font-medium text-[#0B2B2B]">
-                {payerName || 'Your account'}
-              </span>
-            </div>
-            <button
-              onClick={logout}
-              aria-label="Log out"
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#0B2B2B] shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
-            >
-              <LogOut className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
+    <AppShell
+      role="payer"
+      portal="Payer"
+      nav={PAYER_NAV}
+      title="Your payments"
+      description="Receipts for everything you've paid through VaultPay."
+    >
+      <div>
         {/* Stats */}
-        <div className="mt-10 grid gap-5 sm:grid-cols-3">
+        <div className="grid gap-5 sm:grid-cols-3">
           <StatCard
             icon={<Wallet className="h-5 w-5 text-emerald-600" />}
             label="Total paid"
@@ -331,7 +300,7 @@ export default function PayerPaymentsPage() {
           })}
         </div>
       </div>
-    </main>
+    </AppShell>
   );
 }
 
