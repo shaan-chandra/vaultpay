@@ -13,5 +13,6 @@ import {AuthModule} from "../auth/auth.module"
   ],
   controllers: [MerchantController, MerchantAuthController],
   providers: [MerchantService, JwtAuthGuard, RolesGuard],
+  exports: [MerchantService],
 })
 export class MerchantModule {}

@@ -29,10 +29,29 @@ model Merchant {
   contact             String         @db.VarChar(10)
   balance             Int            @default(0)
   commissionPercent   Int    
+  status              MerchantStatus @default(ACTIVE)
+  statusReason        String?
+  statusUpdatedAt     DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
   paymentLinks        PaymentLink[]
   payments            Payment[]
+  statusEvents        MerchantStatusEvent[]
+
+  @@index([status])
+}
+
+model MerchantStatusEvent {
+  id          String         @id @default(uuid())
+  merchantId  String
+  merchant    Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  fromStatus  MerchantStatus
+  toStatus    MerchantStatus
+  reason      String
+  actorId     String
+  createdAt   DateTime       @default(now())
+
+  @@index([merchantId, createdAt])
 }
 model PaymentLink {
   id                String             @id @default(uuid())
@@ -96,6 +115,12 @@ enum FraudDecision {
   ALLOW
   REVIEW
   BLOCK
+}
+
+enum MerchantStatus {
+  ACTIVE
+  UNDER_REVIEW // can sign in and read, cannot take new payments
+  BLOCKED
 }
 
 enum PaymentLinkType {

@@ -1,12 +1,20 @@
-import { Injectable, BadRequestException, NotFoundException, GoneException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, GoneException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentLinkDto } from '../dto/payment-link.dto';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
-import { PaymentLinkType, PaymentStatus, FraudDecision, Prisma } from '@prisma/client';
+import { PaymentLinkType, PaymentStatus, FraudDecision, MerchantStatus, Prisma } from '@prisma/client';
 import {PaymentListQueryDto } from "../dto/payment-list-query.dto"
 import { FraudService } from '../fraud/fraud.service';
 import { MockProcessorService } from '../processor/mock-processor.service';
 import { fingerprintPan, last4, normalizePan } from '../processor/card.util';
+
+function suspendedMessage(status: MerchantStatus, reason: string | null): string {
+  const base =
+    status === MerchantStatus.BLOCKED
+      ? 'This merchant account is blocked'
+      : 'This merchant account is under review and cannot accept new payments';
+  return reason ? `${base}: ${reason}` : base;
+}
 
 @Injectable()
 export class PaymentLinksService {
@@ -37,6 +45,16 @@ export class PaymentLinksService {
     if (dto.type === PaymentLinkType.OPEN && dto.amount != null) {
         throw new BadRequestException("Amount must not be set for open payment links")
     }
+    const merchant = await this.prisma.merchant.findUnique({
+        where: { id: merchantId },
+        select: { status: true, statusReason: true },
+    })
+    if (!merchant) {
+        throw new NotFoundException("Merchant not found")
+    }
+    if (merchant.status !== MerchantStatus.ACTIVE) {
+        throw new ForbiddenException(suspendedMessage(merchant.status, merchant.statusReason))
+    }
     return this.prisma.paymentLink.create({
         data: {
             type: dto.type, 
@@ -59,6 +77,7 @@ export class PaymentLinksService {
                 select: {
                     name: true,
                     company: true,
+                    status: true,
                 },
             },
         },
@@ -69,8 +88,12 @@ export class PaymentLinksService {
     if (user.active === false) {
         throw new GoneException("payment link is no more active")
     }
-    const {active, ...res} = user;
-    return res 
+    // Suspended merchants must not be able to collect through links created earlier.
+    if (user.merchant.status !== MerchantStatus.ACTIVE) {
+        throw new GoneException("This payment link is no longer accepting payments")
+    }
+    const {active, merchant, ...res} = user;
+    return { ...res, merchant: { name: merchant.name, company: merchant.company } }
     
   }
   async createPayment(dto: CreatePaymentDto) {
@@ -83,6 +106,9 @@ export class PaymentLinksService {
 
   if (!findLink) throw new NotFoundException('Payment Link not found!');
   if (!findLink.active) throw new GoneException('This payment link is no longer active');
+  if (findLink.merchant.status !== MerchantStatus.ACTIVE) {
+    throw new ForbiddenException('This merchant is not currently able to accept payments');
+  }
 
   let amountPaid: number;
   if (findLink.type === PaymentLinkType.FIXED) {

@@ -352,7 +352,7 @@ function QuickActions() {
 
       <div className="mt-4 space-y-3">
         <a
-          href="/merchant/payment-links/new"
+          href="/merchant/payment-link"
           className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-700 active:translate-y-px"
         >
           <span className="text-base leading-none">+</span>

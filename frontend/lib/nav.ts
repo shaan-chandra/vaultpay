@@ -1,4 +1,4 @@
-import { Home, Link2, Receipt, Store, Wallet } from 'lucide-react'
+import { Home, Link2, Receipt, ShieldAlert, Store, Wallet } from 'lucide-react'
 import type { NavItem } from '@/components/app-shell'
 
 export const MERCHANT_NAV: NavItem[] = [
@@ -9,6 +9,7 @@ export const MERCHANT_NAV: NavItem[] = [
 
 export const SUPERADMIN_NAV: NavItem[] = [
   { label: 'Merchants', href: '/superadmin/dashboard', icon: Store },
+  { label: 'Fraud alerts', href: '/superadmin/fraud', icon: ShieldAlert },
 ]
 
 export const PAYER_NAV: NavItem[] = [

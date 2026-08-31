@@ -1,25 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, X, Search, TriangleAlert, Loader2 } from "lucide-react";
+import { Plus, X, Search, TriangleAlert, Loader2, ChevronRight } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { MerchantStatusBadge } from "@/components/status-badge";
 import { SUPERADMIN_NAV } from "@/lib/nav";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
-// ─────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────
-type Merchant = {
-  id: string;
-  name: string;
-  company: string;
-  email: string;
-  contact: string;
-  balance: number;           // whole rupees, same unit the payment pages use
-  commissionPercent: number; // decimal percent, e.g. 2.5
-};
+import {
+  API,
+  adminFetch,
+  formatMoney,
+  formatPercent,
+  UnauthorizedError,
+  type MerchantRow,
+  type Overview,
+  type OverviewRange,
+} from "@/lib/superadmin";
 
 type NewMerchantForm = {
   name: string;
@@ -30,25 +27,11 @@ type NewMerchantForm = {
   commissionPercent: string; // string because it comes from an <input>
 };
 
-// ─────────────────────────────────────────────────────────────
-// Starts empty — populated by your fetch on mount (see TODO below).
-// ─────────────────────────────────────────────────────────────
-const initialMerchants: Merchant[] = [];
-
-// ─────────────────────────────────────────────────────────────
-// Formatters
-// ─────────────────────────────────────────────────────────────
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
-
-function formatPercent(pct: number): string {
-  return `${pct.toFixed(2)}%`;
-}
+const RANGES: { value: OverviewRange; label: string }[] = [
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "all", label: "All time" },
+];
 
 function initials(name: string): string {
   return name
@@ -77,47 +60,40 @@ function avatarTint(name: string): string {
 // Main page
 // ─────────────────────────────────────────────────────────────
 export default function SuperAdminDashboard() {
-  const [merchants, setMerchants] = useState<Merchant[]>(initialMerchants);
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [range, setRange] = useState<OverviewRange>("all");
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [query, setQuery] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  useEffect(() => {
-    async function loadMerchants() {
-      const token = localStorage.getItem("superadmin_token");
-      if (!token) {
-        router.replace("/superadmin/login");
-        return;
-      }
-
+  const load = useCallback(
+    async (nextRange: OverviewRange) => {
       try {
-        const res = await fetch(`${API}/superadmin/merchant`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
+        setOverview(await adminFetch<Overview>(`/superadmin/overview?range=${nextRange}`));
+        setError(null);
+      } catch (err) {
         // An expired or rotated-secret token lands here; don't leave the admin
         // staring at an empty table wondering where their merchants went.
-        if (res.status === 401 || res.status === 403) {
-          localStorage.removeItem("superadmin_token");
+        if (err instanceof UnauthorizedError) {
           router.replace("/superadmin/login");
           return;
         }
-
-        if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
-
-        setMerchants((await res.json()) as Merchant[]);
-        setError(null);
-      } catch {
-        setError("Could not load merchants. Check that the server is running, then retry.");
+        setError("Could not load platform data. Check that the server is running, then retry.");
       } finally {
         setLoading(false);
       }
-    }
+    },
+    [router],
+  );
 
-    void loadMerchants();
-  }, [router]);
+  useEffect(() => {
+    void load(range);
+  }, [load, range]);
+
+  const merchants = overview?.merchants ?? [];
+  const totals = overview?.totals;
 
   const filtered = merchants.filter((m) => {
     if (!query) return true;
@@ -129,50 +105,85 @@ export default function SuperAdminDashboard() {
     );
   });
 
-  const totalBalance = merchants.reduce((s, m) => s + m.balance, 0);
-  const avgCommission =
-    merchants.length === 0
-      ? 0
-      : merchants.reduce((s, m) => s + m.commissionPercent, 0) / merchants.length;
-
-  function handleCreated(newMerchant: Merchant) {
-    setMerchants((prev) => [newMerchant, ...prev]);
-    setModalOpen(false);
-  }
-
   return (
     <AppShell
       role="superadmin"
       portal="Administrator"
       nav={SUPERADMIN_NAV}
       title="Merchants"
-      description="Onboard merchants and review platform balances."
+      description="Onboard merchants and see how processed volume splits between the platform and each merchant."
       actions={
-        <button
-          onClick={() => setModalOpen(true)}
-          className="bg-indigo-600 cursor-pointer hover:bg-indigo-700 text-white text-sm px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow-sm whitespace-nowrap"
-        >
-          <Plus size={16} />
-          Add merchant
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={range}
+            onChange={(e) => {
+              setLoading(true);
+              setRange(e.target.value as OverviewRange);
+            }}
+            className="cursor-pointer rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-indigo-500"
+          >
+            {RANGES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="bg-indigo-600 cursor-pointer hover:bg-indigo-700 text-white text-sm px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+          >
+            <Plus size={16} />
+            Add merchant
+          </button>
+        </div>
       }
     >
       <>
-        {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-3 mb-8">
-          <StatCard label="Total merchants" value={merchants.length.toString()} />
+        {/* Money split */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-3">
           <StatCard
-            label="Total balance held"
-            value={formatMoney(totalBalance)}
+            label="Gross processed"
+            value={formatMoney(totals?.grossVolume ?? 0)}
+            hint={`${totals?.succeededCount ?? 0} successful payments`}
+            tabular
+          />
+          <StatCard
+            label="Platform commission"
+            value={formatMoney(totals?.platformCommission ?? 0)}
+            hint="Kept by the platform"
+            tabular
+            accent="indigo"
+          />
+          <StatCard
+            label="Merchant net"
+            value={formatMoney(totals?.merchantNet ?? 0)}
+            hint="Credited to merchants"
             tabular
             accent="emerald"
           />
           <StatCard
-            label="Avg. commission"
-            value={formatPercent(avgCommission)}
-            tabular
+            label="Merchants"
+            value={(totals?.merchantCount ?? 0).toString()}
+            hint={`${totals?.activeMerchants ?? 0} active · ${
+              totals?.underReviewMerchants ?? 0
+            } under review · ${totals?.blockedMerchants ?? 0} blocked`}
           />
         </div>
+
+        {/* Reconciliation line — makes the split unambiguous at a glance */}
+        <p className="mb-8 text-xs text-slate-500 tabular-nums">
+          {formatMoney(totals?.grossVolume ?? 0)} gross ={" "}
+          <span className="text-indigo-700">
+            {formatMoney(totals?.platformCommission ?? 0)} platform
+          </span>{" "}
+          +{" "}
+          <span className="text-emerald-700">
+            {formatMoney(totals?.merchantNet ?? 0)} merchants
+          </span>
+          {" · "}
+          {totals?.blockedCount ?? 0} blocked and {totals?.failedCount ?? 0} failed attempts
+          excluded
+        </p>
 
         {/* Search + table */}
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
@@ -200,7 +211,10 @@ export default function SuperAdminDashboard() {
               <TriangleAlert size={20} className="text-amber-600" />
               <p className="mt-3 text-sm text-slate-700">{error}</p>
               <button
-                onClick={() => window.location.reload()}
+                onClick={() => {
+                  setLoading(true);
+                  void load(range);
+                }}
                 className="mt-4 text-sm px-3.5 py-2 rounded-md border border-slate-300 hover:bg-slate-50 cursor-pointer"
               >
                 Retry
@@ -209,65 +223,106 @@ export default function SuperAdminDashboard() {
           ) : filtered.length === 0 ? (
             <EmptyState hasMerchants={merchants.length > 0} />
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                  <th className="py-3 px-4 font-medium">Merchant</th>
-                  <th className="py-3 px-4 font-medium">Contact</th>
-                  <th className="py-3 px-4 font-medium text-right">Commission</th>
-                  <th className="py-3 px-4 font-medium text-right">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((m) => (
-                  <tr
-                    key={m.id}
-                    className="border-b border-slate-100 last:border-b-0 hover:bg-stone-50"
-                  >
-                    <td className="py-4 px-4">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${avatarTint(
-                            m.name
-                          )}`}
-                        >
-                          {initials(m.name)}
-                        </div>
-                        <div>
-                          <div className="font-medium text-slate-900">{m.name}</div>
-                          <div className="text-slate-500 text-xs">{m.company}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="text-slate-900">{m.email}</div>
-                      <div className="text-slate-500 text-xs font-mono">{m.contact}</div>
-                    </td>
-                    <td className="py-4 px-4 text-right tabular-nums text-slate-700">
-                      {formatPercent(m.commissionPercent)}
-                    </td>
-                    <td className="py-4 px-4 text-right tabular-nums font-medium">
-                      <span
-                        className={m.balance > 0 ? "text-emerald-700" : "text-slate-400"}
-                      >
-                        {formatMoney(m.balance)}
-                      </span>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                    <th className="py-3 px-4 font-medium">Merchant</th>
+                    <th className="py-3 px-4 font-medium">Status</th>
+                    <th className="py-3 px-4 font-medium text-right">Rate</th>
+                    <th className="py-3 px-4 font-medium text-right">Gross</th>
+                    <th className="py-3 px-4 font-medium text-right">Platform</th>
+                    <th className="py-3 px-4 font-medium text-right">Merchant net</th>
+                    <th className="py-3 px-4 font-medium text-right">Balance</th>
+                    <th className="py-3 px-4" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filtered.map((m) => (
+                    <MerchantTableRow key={m.id} merchant={m} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
         {modalOpen && (
           <AddMerchantModal
             onClose={() => setModalOpen(false)}
-            onCreated={handleCreated}
+            onCreated={() => {
+              setModalOpen(false);
+              void load(range);
+            }}
           />
         )}
       </>
     </AppShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Table row
+// ─────────────────────────────────────────────────────────────
+function MerchantTableRow({ merchant: m }: { merchant: MerchantRow }) {
+  const risky = m.attemptCount >= 5 && m.blockedRate >= 0.2;
+
+  return (
+    <tr className="border-b border-slate-100 last:border-b-0 hover:bg-stone-50">
+      <td className="py-4 px-4">
+        <div className="flex items-center gap-3">
+          <div
+            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${avatarTint(
+              m.name,
+            )}`}
+          >
+            {initials(m.name)}
+          </div>
+          <div className="min-w-0">
+            <div className="font-medium text-slate-900">{m.name}</div>
+            <div className="text-slate-500 text-xs">{m.company}</div>
+            <div className="text-slate-400 text-xs">{m.email}</div>
+          </div>
+        </div>
+      </td>
+      <td className="py-4 px-4">
+        <div className="flex flex-col items-start gap-1">
+          <MerchantStatusBadge status={m.status} />
+          {risky && (
+            <span className="inline-flex items-center gap-1 text-xs text-rose-600">
+              <TriangleAlert size={12} />
+              {Math.round(m.blockedRate * 100)}% blocked
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="py-4 px-4 text-right tabular-nums text-slate-700">
+        {formatPercent(m.commissionPercent)}
+      </td>
+      <td className="py-4 px-4 text-right tabular-nums text-slate-900">
+        {formatMoney(m.grossVolume)}
+      </td>
+      <td className="py-4 px-4 text-right tabular-nums text-indigo-700">
+        {formatMoney(m.platformCommission)}
+      </td>
+      <td className="py-4 px-4 text-right tabular-nums text-emerald-700">
+        {formatMoney(m.merchantNet)}
+      </td>
+      <td className="py-4 px-4 text-right tabular-nums font-medium">
+        <span className={m.balance > 0 ? "text-slate-900" : "text-slate-400"}>
+          {formatMoney(m.balance)}
+        </span>
+      </td>
+      <td className="py-4 px-4 text-right">
+        <Link
+          href={`/superadmin/merchants/${m.id}`}
+          className="inline-flex items-center gap-0.5 text-xs text-indigo-600 hover:text-indigo-800 whitespace-nowrap"
+        >
+          Review
+          <ChevronRight size={13} />
+        </Link>
+      </td>
+    </tr>
   );
 }
 
@@ -277,12 +332,18 @@ export default function SuperAdminDashboard() {
 type StatCardProps = {
   label: string;
   value: string;
+  hint?: string;
   tabular?: boolean;
-  accent?: "emerald";
+  accent?: "emerald" | "indigo";
 };
 
-function StatCard({ label, value, tabular, accent }: StatCardProps) {
-  const accentClass = accent === "emerald" ? "text-emerald-700" : "text-slate-900";
+function StatCard({ label, value, hint, tabular, accent }: StatCardProps) {
+  const accentClass =
+    accent === "emerald"
+      ? "text-emerald-700"
+      : accent === "indigo"
+        ? "text-indigo-700"
+        : "text-slate-900";
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-5">
       <p className="text-xs uppercase tracking-widest text-slate-500 mb-2">{label}</p>
@@ -293,6 +354,7 @@ function StatCard({ label, value, tabular, accent }: StatCardProps) {
       >
         {value}
       </p>
+      {hint && <p className="mt-1.5 text-xs text-slate-500">{hint}</p>}
     </div>
   );
 }
@@ -324,7 +386,7 @@ function EmptyState({ hasMerchants }: EmptyStateProps) {
 // ─────────────────────────────────────────────────────────────
 type AddMerchantModalProps = {
   onClose: () => void;
-  onCreated: (merchant: Merchant) => void;
+  onCreated: () => void;
 };
 
 function AddMerchantModal({ onClose, onCreated }: AddMerchantModalProps) {
@@ -348,38 +410,8 @@ function AddMerchantModal({ onClose, onCreated }: AddMerchantModalProps) {
     setSubmitting(true);
     setError(null);
 
-    // ───────────────────────────────────────────────────
-    // NOTE: the commented block below is stale. Send commissionPercent as a plain
-    // percent (2.5) — the backend converts it to basis points itself.
-    //
-    // const token = localStorage.getItem("token");
-    // const res = await fetch("http://localhost:3000/superadmin/merchants", {
-    //   method: "POST",
-    //   headers: {
-    //     "Content-Type": "application/json",
-    //     Authorization: `Bearer ${token}`,
-    //   },
-    //   body: JSON.stringify({
-    //     name: form.name,
-    //     company: form.company,
-    //     email: form.email,
-    //     contact: form.contact,
-    //     password: form.password,
-    //     // Backend expects basis points — convert here:
-    //     commissionPercent: Math.round(parseFloat(form.commissionPercent) * 100),
-    //   }),
-    // });
-    //
-    // if (!res.ok) {
-    //   const body = await res.json().catch(() => ({}));
-    //   setError(body.message || "Failed to add merchant");
-    //   setSubmitting(false);
-    //   return;
-    // }
-    //
-    // const created: Merchant = await res.json();
-    // onCreated(created);
-    // ───────────────────────────────────────────────────
+    // Send commissionPercent as a plain percent (2.5) — the backend converts it
+    // to basis points itself.
     try {
       const token = localStorage.getItem("superadmin_token")
       const res = await fetch(`${API}/superadmin/merchant`, {
@@ -410,9 +442,7 @@ function AddMerchantModal({ onClose, onCreated }: AddMerchantModalProps) {
         return
       }
 
-      // POST echoes commissionPercent in basis points while GET returns a plain
-      // percent, so normalise before it reaches the table.
-      onCreated({ ...body, commissionPercent: body.commissionPercent / 100 } as Merchant)
+      onCreated()
     } catch {
       setError("Could not reach the server. Please try again.")
     } finally {

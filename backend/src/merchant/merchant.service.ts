@@ -1,7 +1,8 @@
-import { Injectable, ConflictException, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { Injectable, ConflictException, NotFoundException, UnauthorizedException, ForbiddenException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";  // adjust path
 import * as bcrypt from "bcrypt";
 import { JwtService} from '@nestjs/jwt';
+import { MerchantStatus } from "@prisma/client";
 
 @Injectable()
 export class MerchantService {
@@ -52,6 +53,9 @@ export class MerchantService {
         contact: true,
         balance: true, 
         commissionPercent: true, 
+        status: true,
+        statusReason: true,
+        statusUpdatedAt: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -63,14 +67,69 @@ export class MerchantService {
   async merchantLogin(email, password) {
     const merchant = await this.prisma.merchant.findUnique({where: {email }})
     if (!merchant) {
-      throw new NotFoundException("User doesn't exist")
+      throw new UnauthorizedException("Email or password is incorrect")
     }
-    const valid_password = bcrypt.compare(password, merchant.password)
+    const valid_password = await bcrypt.compare(password, merchant.password)
     if (!valid_password) {
-      throw new UnauthorizedException("Password is wrong.")
+      throw new UnauthorizedException("Email or password is incorrect")
+    }
+    if (merchant.status === MerchantStatus.BLOCKED) {
+      throw new ForbiddenException(
+        merchant.statusReason
+          ? `Account blocked: ${merchant.statusReason}`
+          : 'This merchant account has been blocked. Contact support.',
+      )
     }
     // create jwt session token for merchant
     const token = await this.jwt.signAsync({sub: merchant.id, email: merchant.email, role: 'merchant'})
-    return {message: "token: ", token}
+    return {message: "token: ", token, status: merchant.status}
+  }
+
+  async updateStatus(
+    merchantId: string,
+    actorId: string,
+    data: { status: MerchantStatus; reason: string },
+  ) {
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { id: true, status: true },
+    });
+    if (!merchant) {
+      throw new NotFoundException('Merchant not found');
+    }
+    if (merchant.status === data.status) {
+      throw new BadRequestException(`Merchant is already ${data.status}`);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.merchant.update({
+        where: { id: merchantId },
+        data: {
+          status: data.status,
+          // A reactivation should not leave the old block reason lingering on the record.
+          statusReason: data.status === MerchantStatus.ACTIVE ? null : data.reason,
+          statusUpdatedAt: new Date(),
+        },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          statusReason: true,
+          statusUpdatedAt: true,
+        },
+      });
+
+      await tx.merchantStatusEvent.create({
+        data: {
+          merchantId,
+          fromStatus: merchant.status,
+          toStatus: data.status,
+          reason: data.reason,
+          actorId,
+        },
+      });
+
+      return updated;
+    });
   }
 }
